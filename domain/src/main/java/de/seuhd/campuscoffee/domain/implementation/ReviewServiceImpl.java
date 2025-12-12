@@ -1,6 +1,8 @@
 package de.seuhd.campuscoffee.domain.implementation;
 
 import de.seuhd.campuscoffee.domain.configuration.ApprovalConfiguration;
+import de.seuhd.campuscoffee.domain.exceptions.NotFoundException;
+import de.seuhd.campuscoffee.domain.exceptions.ValidationException;
 import de.seuhd.campuscoffee.domain.model.objects.Review;
 import de.seuhd.campuscoffee.domain.ports.api.ReviewService;
 import de.seuhd.campuscoffee.domain.ports.data.CrudDataService;
@@ -13,6 +15,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Objects;
 
 /**
  * Implementation of the Review service that handles business logic related to review entities.
@@ -42,13 +45,43 @@ public class ReviewServiceImpl extends CrudServiceImpl<Review, Long> implements 
         return reviewDataService;
     }
 
-    @Override
-    @Transactional
-    public @NonNull Review upsert(@NonNull Review review) {
-        // TODO: Implement the missing business logic here
+        @Override
+        @Transactional
+        public @NonNull Review upsert(@NonNull Review review) {
+            // TODO: Implement the missing business logic here
 
-        return super.upsert(review);
-    }
+            if (review.id() == null) {
+
+                List<Review> existingByAuthor = reviewDataService.filter(review.pos(), review.author());
+                if (!existingByAuthor.isEmpty()) {
+                    throw new ValidationException("A user may only create one review per PoS");
+                }
+
+                log.info("Creating new review for author {} and pos {}",review.author().getId(), review.pos().getId());
+
+                review = review.toBuilder()
+                        .approvalCount(0)
+                        .approved(false)
+                        .build();
+
+            } else {
+
+                log.info("Updating review with ID {}",  review.id());
+
+                Review existing;
+                try {
+                    existing = reviewDataService.getById(review.id());
+                } catch (NotFoundException e) {
+                    throw new ValidationException("No review with ID " + review.id() + " exists");
+                }
+                review = review.toBuilder()
+                        .approvalCount(existing.approvalCount())
+                        .approved(existing.approved())
+                        .build();
+            }
+
+            return super.upsert(review);
+        }
 
     @Override
     @Transactional(readOnly = true)
@@ -63,20 +96,29 @@ public class ReviewServiceImpl extends CrudServiceImpl<Review, Long> implements 
                 review.getId(), userId);
 
         // validate that the user exists
-        // TODO: Implement the required business logic here
-
+        // DONE: Implement the required business logic here
+        userDataService.getById(userId);
+        log.debug("user with id {} exists", userId);
         // validate that the review exists
-        // TODO: Implement the required business logic here
+        // DONE: Implement the required business logic here
+        if(review.getId()==null)
+            throw new ValidationException("No review with this ID can be found");
+        else
+            log.info("review with ID '{}' exists", review.getId());
 
         // a user cannot approve their own review
-        // TODO: Implement the required business logic here
-
+        // DONE: Implement the required business logic here
+        if(userId.equals(review.author().getId()))
+            throw new ValidationException("creator cant approve own review");
         // increment approval count
-        // TODO: Implement the required business logic here
-
+        // DONE: Implement the required business logic here
+        review = review.toBuilder()
+                .approvalCount(review.approvalCount()+1)
+                .build();
         // update approval status to determine if the review now reaches the approval quorum
-        // TODO: Implement the required business logic here
 
+        // DONE: Implement the required business logic here
+        review = updateApprovalStatus(review);
         return reviewDataService.upsert(review);
     }
 
